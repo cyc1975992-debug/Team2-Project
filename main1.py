@@ -5,7 +5,7 @@ import pandas as pd
 if 'logs' not in st.session_state:
     st.session_state['logs'] = pd.DataFrame(columns=['시간', '출발지', '도착지', '프로토콜', '상태', '상세내용'])
 if 'blocked_ips' not in st.session_state:
-    st.session_state['blocked_ips'] = ["8.8.8.8", "1.1.1.1"]
+    st.session_state['blocked_ips'] = []
 if 'engine_on' not in st.session_state:
     st.session_state['engine_on'] = False
 
