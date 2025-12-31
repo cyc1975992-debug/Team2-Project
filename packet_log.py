@@ -35,9 +35,13 @@ def packet_analyzer(packet):
     st.session_state['top_talkers'][src_ip] = st.session_state['top_talkers'].get(src_ip, 0) + 1
 
     # 위협 감지 및 로그 생성
-    status = "🚨 위협" if any(ip in st.session_state['blocked_ips'] for ip in [src_ip, dst_ip]) else "정상"
+    # 차단 DB(표)가 비어있지 않고, 현재 IP가 그 표의 'IP' 항목에 있는지 확인
+    if not st.session_state['blocked_db'].empty and (src_ip in st.session_state['blocked_db']['IP'].values):
+        status = "🚨 위협"
+    else:
+        status = "정상"
     entry = {'시간': datetime.now().strftime('%H:%M:%S'), '출발지': src_ip, '도착지': dst_ip,
-             '프로토콜': proto, '상태': status, '상세내용': f"{len(packet)} bytes"}
+            '프로토콜': proto, '상태': status, '상세내용': f"{len(packet)} bytes"}
 
     # 로그 업데이트 (최신 50개)
     new_df = pd.DataFrame([entry])
