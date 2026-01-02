@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import subprocess
 
 st.title("🛡️ 방어 설정 (심플 DB)")
 
@@ -10,13 +11,25 @@ if 'blocked_db' not in st.session_state:
 
 # 2. 자동 차단 설정 (PPS 기준)
 st.subheader("⚙️ 자동 방어 설정")
-st.session_state['auto_block_on'] = st.checkbox("자동 차단 활성화")
-st.session_state['pps_threshold'] = st.number_input("차단 기준 PPS", value=500)
+
+st.info("""
+💡 **PPS 설정 가이드**
+* **10 ~ 30**: 테스트용 (접속만 해도 즉시 감지)
+* **100 ~ 500**: 일반 사무/가정용 (추천 기본값)
+* **1,000+**: 고성능 서버 환경 (DDoS 방어용)
+""")
+
+# st.session_state['auto_block_on'] = st.checkbox("자동 차단 활성화", value=st.session_state.get('auto_block_on', False))
+new_pps = st.number_input("차단 기준 PPS", value=st.session_state.get('pps_threshold', 500))
+if new_pps != st.session_state['pps_threshold']:
+    st.session_state['pps_threshold'] = new_pps
+    st.rerun()
 
 st.divider()
 
 # 3. 차단 규칙 추가
 with st.form("add_rule"):
+    st.write("➕ 수동 차단 규칙 추가")
     col1, col2, col3 = st.columns(3)
     with col1: ip = st.text_input("IP 주소")
     with col2: port = st.text_input("포트(기본 Any)")
@@ -24,15 +37,29 @@ with st.form("add_rule"):
 
     if st.form_submit_button("차단 목록에 추가"):
         if ip:
+            # 실제 윈도우 방화벽에 차단 규칙 추가 (관리자 권한 필요)
+            cmd = f'netsh advfirewall firewall add rule name="BLOCK_{ip}" dir=in action=block remoteip={ip}'
+            subprocess.run(cmd, shell=True)
+
+            # 세션 DB에 저장
             new_row = {'차단시간': datetime.now().strftime('%H:%M:%S'), 'IP': ip,
                     '포트': port if port else "Any", '프로토콜': proto, '이유': "수동"}
             st.session_state['blocked_db'] = pd.concat([st.session_state['blocked_db'], pd.DataFrame([new_row])], ignore_index=True)
+
+            st.success(f"✅ {ip}가 실제 방화벽 및 목록에 등록되었습니다.")
             st.rerun()
 
 # 4. 표 보여주기
 st.subheader("🚫 차단 목록")
 st.table(st.session_state['blocked_db'])
 
+# 목록 비우기(방화벽 규칙도 같이 삭제)
 if st.button("목록 비우기"):
+    # 목록에 있는 모든 IP의 방화벽 규칙 삭제 시도
+    for ip in st.session_state['blocked_db']['IP']:
+        del_cmd = f'netsh advfirewall firewall delete rule name="BLOCK_{ip}"'
+        subprocess.run(del_cmd, shell=True)
+
     st.session_state['blocked_db'] = pd.DataFrame(columns=['차단시간', 'IP', '포트', '프로토콜', '이유'])
+    st.warning("모든 차단 규칙이 방화벽과 목록에서 삭제되었습니다.")
     st.rerun()

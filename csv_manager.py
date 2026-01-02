@@ -1,36 +1,66 @@
 import streamlit as st
 import pandas as pd
 import os
+import time
 
-st.title("💾 CSV 위협 로그 관리")
+# 페이지 설정 (아이콘 추가)
+st.set_page_config(page_icon="💾", layout="centered")
 
-# 파일이 존재하는지 먼저 확인
+st.title("💾 CSV 위협 로그 관리 센터")
+st.caption("네트워크 로그 파일에서 위협 요소를 필터링하고 관리합니다.")
+
+st.divider()
+
+# 파일 존재 여부에 따른 카드형 레이아웃
 if os.path.exists("network_logs.csv"):
-    if st.button("🚨 위협 로그만 남기기 (파일 업데이트)"):
-        # 1. 파일에서 데이터 불러오기
-        full_df = pd.read_csv("network_logs.csv")
 
-        # 2. '🚨 위협' 상태인 데이터만 필터링
-        # 상태 열에 '위협' 단어가 포함된 행만 추출합니다.
-        threat_df = full_df[full_df['상태'].str.contains("위협", na=False)]
+    # 1. 파일 정보 요약 (고급스러운 대시보드 느낌)
+    try:
+        df_preview = pd.read_csv("network_logs.csv")
+        total_logs = len(df_preview)
+        threat_count = len(df_preview[df_preview['상태'].str.contains("위협", na=False)])
 
-        if not threat_df.empty:
-            # 3. [핵심] 기존 network_logs.csv 파일에 위협 데이터만 덮어쓰기
-            # 별도의 임시 파일을 만들지 않고 원본 파일명을 그대로 사용합니다.
-            threat_df.to_csv("network_logs.csv", index=False, encoding='utf-8-sig')
-            st.success(f"network_logs.csv 파일이 업데이트되었습니다. (총 {len(threat_df)}건의 위협 로그)")
-            st.rerun() # 화면을 갱신하여 변경된 파일 상태 반영
-        else:
-            st.warning("기록된 로그 중 위협 항목이 없어 파일을 업데이트하지 않았습니다.")
+        col1, col2 = st.columns(2)
+        col1.metric("전체 로그 수", f"{total_logs} 건")
+        col2.metric("감지된 위협", f"{threat_count} 건", delta_color="inverse")
+    except:
+        st.info("로그 파일을 분석 중입니다...")
 
-    # 4. 업데이트된 network_logs.csv 파일 다운로드 버튼
-    # 이제 network_logs.csv 자체가 위협 로그만 담고 있게 됩니다.
-    with open("network_logs.csv", "rb") as f:
-        st.download_button(
-            label="📥 현재 위협 로그 파일 다운로드",
-            data=f,
-            file_name="network_logs_threat_only.csv",
-            mime="text/csv"
-        )
+    st.write("") # 간격 조절
+
+    # 2. 작업 영역을 컨테이너로 묶어 깔끔하게 표현
+    with st.container(border=True):
+        st.subheader("🛠️ 로그 최적화 작업")
+        st.write("불필요한 정상 로그를 제거하고 **위협 데이터**만 남깁니다.")
+
+        if st.button("🚨 위협 로그만 남기기 (파일 업데이트)", use_container_width=True, type="primary"):
+            full_df = pd.read_csv("network_logs.csv")
+            threat_df = full_df[full_df['상태'].str.contains("위협", na=False)]
+
+            if not threat_df.empty:
+                threat_df.to_csv("network_logs.csv", index=False, encoding='utf-8-sig')
+                st.toast(f"업데이트 완료! ({len(threat_df)}건)", icon="✅")
+                time.sleep(1) # 토스트 메시지 보여줄 시간
+                st.rerun()
+            else:
+                st.warning("필터링할 위협 항목이 없습니다.")
+
+    st.write("")
+
+    # 3. 다운로드 영역 (Expander로 숨겨서 깔끔하게)
+    with st.expander("📥 리포트 다운로드"):
+        st.info("현재 저장된 `network_logs.csv` 파일을 다운로드합니다.")
+        with open("network_logs.csv", "rb") as f:
+            st.download_button(
+                label="📥 위협 로그 리포트 받기",
+                data=f,
+                file_name=f"threat_report_{pd.Timestamp.now().strftime('%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
 else:
-    st.error("저장된 network_logs.csv 파일이 없습니다. 먼저 엔진을 가동하여 로그를 생성하세요.")
+    # 파일이 없을 때 예쁜 알림
+    with st.status("파일을 찾을 수 없습니다", state="error"):
+        st.write("저장된 `network_logs.csv` 파일이 없습니다.")
+        st.write("먼저 **네트워크 엔진**을 가동하여 데이터를 수집하세요.")
