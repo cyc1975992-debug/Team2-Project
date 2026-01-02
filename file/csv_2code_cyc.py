@@ -11,7 +11,7 @@ import psutil
 import platform
 
 # [설정] 로그 파일 및 시각화 대상 프로토콜 정의
-LOG_FILE = "network_logs.csv"
+LOG_FILE = "../network_logs.csv"
 LOG_COLUMNS = ['시간', '출발지', '도착지', '프로토콜', '상태', '상세내용']
 ALL_PROTOCOLS = ['TCP', 'UDP', 'ICMP', '기타']
 

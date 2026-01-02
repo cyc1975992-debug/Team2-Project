@@ -4,6 +4,7 @@ from scapy.all import sniff, IP, TCP, UDP, ICMP
 from datetime import datetime
 import pandas as pd
 import time
+import os
 
 # --- 세션 상태 초기화 ---
 if 'engine_on' not in st.session_state:
@@ -35,9 +36,18 @@ def packet_analyzer(packet):
     st.session_state['top_talkers'][src_ip] = st.session_state['top_talkers'].get(src_ip, 0) + 1
 
     # 위협 감지 및 로그 생성
-    status = "🚨 위협" if any(ip in st.session_state['blocked_ips'] for ip in [src_ip, dst_ip]) else "정상"
+    # 차단 DB(표)가 비어있지 않고, 현재 IP가 그 표의 'IP' 항목에 있는지 확인
+    if not st.session_state['blocked_db'].empty and (src_ip in st.session_state['blocked_db']['IP'].values):
+        status = "🚨 위협"
+    else:
+        status = "정상"
     entry = {'시간': datetime.now().strftime('%H:%M:%S'), '출발지': src_ip, '도착지': dst_ip,
-             '프로토콜': proto, '상태': status, '상세내용': f"{len(packet)} bytes"}
+            '프로토콜': proto, '상태': status, '상세내용': f"{len(packet)} bytes"}
+
+    df_save = pd.DataFrame([entry])
+    df_save.to_csv("network_logs.csv", mode='a', header=not os.path.exists("network_logs.csv"), index=False, encoding='utf-8-sig')
+
+    st.session_state['logs'] = pd.concat([df_save, st.session_state['logs']], ignore_index=True).head(50)
 
     # 로그 업데이트 (최신 50개)
     new_df = pd.DataFrame([entry])
@@ -93,6 +103,11 @@ with col2:
         st.session_state['logs'] = pd.DataFrame(columns=['시간', '출발지', '도착지', '프로토콜', '상태', '상세내용'])
         st.session_state['top_talkers'] = {}
         st.session_state['pps_history'] = []
+
+        if os.path.exists("network_logs.csv"):
+            # 빈 데이터프레임을 만들어서 파일에 덮어쓰기 (내용 삭제)
+            pd.DataFrame(columns=['시간', '출발지', '도착지', '프로토콜', '상태', '상세내용']).to_csv("network_logs.csv", index=False, encoding='utf-8-sig')
+
         st.rerun()
 
 # 3. 실시간 패킷 로그 테이블
