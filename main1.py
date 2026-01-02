@@ -8,6 +8,8 @@ if 'blocked_ips' not in st.session_state:
     st.session_state['blocked_ips'] = []
 if 'engine_on' not in st.session_state:
     st.session_state['engine_on'] = False
+if 'blocked_db' not in st.session_state:
+    st.session_state['blocked_db'] = pd.DataFrame(columns=['차단시간', 'IP', '포트', '프로토콜', '이유'])
 
 # [내비게이션 설정] 첨부하신 13streamlit_multi_pages.py 스타일 적용
 pg = st.navigation([
