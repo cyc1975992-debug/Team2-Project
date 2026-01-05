@@ -5,6 +5,8 @@ from datetime import datetime
 import pandas as pd
 import time
 import os
+from scapy.all import conf
+
 log_cols = ['시간', '출발지', '도착지', '프로토콜', '포트번호', 'MAC주소(출발→도착)', '상태', '상세내용']
 
 # --- 세션 상태 초기화 ---
@@ -21,29 +23,45 @@ if 'packet_count' not in st.session_state:
     st.session_state['packet_count'] = 0
 if 'top_talkers' not in st.session_state:
     st.session_state['top_talkers'] = {}
+# --- 세션 상태 초기화 구역에 추가 ---
+if 'top_protocols' not in st.session_state:
+    st.session_state['top_protocols'] = {}
+if 'pending_blocks' not in st.session_state:
+    st.session_state['pending_blocks'] = pd.DataFrame(columns=['감지시간', 'IP', 'PPS', '프로토콜'])
+if 'blocked_db' not in st.session_state:
+    st.session_state['blocked_db'] = pd.DataFrame(columns=['차단시간', 'IP', '포트', '프로토콜', '이유'])
+if 'ip_pps_counter' not in st.session_state:
+    st.session_state['ip_pps_counter'] = {}
 
 st.set_page_config(page_title="Network Monitor", layout="wide")
 st.title("📡 실시간 네트워크 관제 및 PPS 통계")
 
 # --- 패킷 분석 엔진 ---
 def packet_analyzer(packet):
-    if not packet.haslayer(IP): return
+
+    is_icmp = packet.haslayer(ICMP) or (packet.haslayer(IP) and packet[IP].proto == 1)
+
+    if not (packet.haslayer(IP) or is_icmp):
+        return
 
     src_ip, dst_ip = packet[IP].src, packet[IP].dst
+
+    is_icmp = packet.haslayer(ICMP)
+
     # MAC 주소 추출 (Ethernet 계층)
     src_mac = packet.src if packet.haslayer("Ether") else "Unknown"
     dst_mac = packet.dst if packet.haslayer("Ether") else "Unknown"
     combined_mac = f"{src_mac} → {dst_mac}"
 
-    if packet.haslayer(TCP):
+    if is_icmp:
+        proto = "ICMP"
+        port = "-"
+    elif packet.haslayer(TCP):
         proto = "TCP"
         port = f"{packet[TCP].sport} → {packet[TCP].dport}"
     elif packet.haslayer(UDP):
         proto = "UDP"
         port = f"{packet[UDP].sport} → {packet[UDP].dport}"
-    elif packet.haslayer(ICMP):
-        proto = "ICMP"
-        port = "-" # ICMP는 포트가 없음
     else:
         proto = "기타"
         port = "-"
@@ -51,6 +69,10 @@ def packet_analyzer(packet):
     # PPS 카운트 및 Top Talkers 집계
     st.session_state['packet_count'] += 1
     st.session_state['top_talkers'][src_ip] = st.session_state['top_talkers'].get(src_ip, 0) + 1
+
+    if 'ip_pps_counter' not in st.session_state:
+        st.session_state['ip_pps_counter'] = {}
+    st.session_state['ip_pps_counter'][src_ip] = st.session_state['ip_pps_counter'].get(src_ip, 0) + 1
 
     if src_ip not in st.session_state['top_protocols']:
         st.session_state['top_protocols'][src_ip] = {}
@@ -80,8 +102,18 @@ def packet_analyzer(packet):
     st.session_state['logs'] = pd.concat([df_save, st.session_state['logs']], ignore_index=True).head(50)
 
 def start_engine():
-    sniff(prn=packet_analyzer, store=0, stop_filter=lambda x: not st.session_state.get('engine_on', False))
+    from scapy.all import conf, sniff
+    target_iface = None
 
+    try:
+        sniff(
+            iface=target_iface, # 모든 인터페이스 감시 시도
+            prn=packet_analyzer,
+            store=0,
+            stop_filter=lambda x: not st.session_state.get('engine_on', False)
+        )
+    except Exception as e:
+        print(f"Sniffing Error: {e}")
 # --- UI 레이아웃 ---
 
 # 1. 상단 대시보드 (PPS & Top Talkers)
@@ -91,9 +123,14 @@ with dash_col1:
     st.subheader("📈 실시간 PPS 추이")
     # PPS 계산 (간이 구현: 1초마다 호출되는 rerun 시점의 카운트)
     current_pps = st.session_state['packet_count']
+    st.session_state['packet_count'] = 0
+
+    current_ip_counts = st.session_state['ip_pps_counter'].copy()
+    st.session_state['ip_pps_counter'] = {}
+
     st.session_state['pps_history'].append(current_pps)
-    if len(st.session_state['pps_history']) > 20: st.session_state['pps_history'].pop(0)
-    st.session_state['packet_count'] = 0 # 카운트 리셋
+    if len(st.session_state['pps_history']) > 20:
+        st.session_state['pps_history'].pop(0)
 
     st.line_chart(st.session_state['pps_history'])
     st.metric("현재 Packets Per Second", f"{current_pps} pps")
@@ -118,24 +155,30 @@ with dash_col2:
     st.subheader("🧐 보안 검토 대기열")
 
     # 현재 PPS 임계치 분석
-    limit_pps = int(st.session_state.get('pps_threshold', 500))
-    if current_pps > limit_pps:
-        top_ip = max(st.session_state['top_talkers'], key=st.session_state['top_talkers'].get)
+    limit_pps = st.session_state.get('pps_threshold', 500)
 
-        # 이미 대기열에 있는 IP가 아니라면 새로 추가
-        ip_protos = st.session_state['top_protocols'].get(top_ip, {})
-        main_proto = max(ip_protos, key=ip_protos.get) if ip_protos else "Unknown"
+    st.caption(f"현재 감지 기준: {limit_pps} PPS")
 
-        if top_ip not in st.session_state['pending_blocks']['IP'].values:
-            new_pending = {
-                '감지시간': datetime.now().strftime('%H:%M:%S'),
-                'IP': top_ip,
-                'PPS': current_pps,
-                '프로토콜': main_proto # 프로토콜 정보 추가
+    for ip, ip_pps in current_ip_counts.items():
+        ip_protos = st.session_state['top_protocols'].get(ip, {})
+        icmp_count = ip_protos.get("ICMP", 0)
+
+        # 이미 차단 목록(blocked_db)에 있는 IP라면 대기열에 넣지 않음
+        is_already_blocked = not st.session_state['blocked_db'].empty and (ip in st.session_state['blocked_db']['IP'].values)
+
+        if (ip_pps > limit_pps):
+            # 차단되지 않았고, 대기열에도 없을 때만 새로 등록
+            if not is_already_blocked and (ip not in st.session_state['pending_blocks']['IP'].values):
+                main_proto = max(ip_protos, key=ip_protos.get) if ip_protos else "Unknown"
+                new_pending = {
+                    '감지시간': datetime.now().strftime('%H:%M:%S'),
+                    'IP': ip,
+                    'PPS': ip_pps,
+                    '프로토콜': f"{main_proto} (핑:{icmp_count}개)"
                 }
-            st.session_state['pending_blocks'] = pd.concat([st.session_state['pending_blocks'], pd.DataFrame([new_pending])], ignore_index=True)
+                st.session_state['pending_blocks'] = pd.concat([st.session_state['pending_blocks'], pd.DataFrame([new_pending])], ignore_index=True)
 
-    # [수정] 대기열 목록을 표로 보여주고 버튼 생성
+    #  대기열 목록을 표로 보여주고 버튼 생성
     pending_df = st.session_state.get('pending_blocks', pd.DataFrame())
     if not pending_df.empty:
         for index, row in pending_df.iterrows():

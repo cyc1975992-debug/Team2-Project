@@ -19,12 +19,21 @@ st.info("""
 * **1,000+**: 고성능 서버 환경 (DDoS 방어용)
 """)
 
-# st.session_state['auto_block_on'] = st.checkbox("자동 차단 활성화", value=st.session_state.get('auto_block_on', False))
-new_pps = st.number_input("차단 기준 PPS", value=st.session_state.get('pps_threshold', 500))
-if new_pps != st.session_state['pps_threshold']:
-    st.session_state['pps_threshold'] = new_pps
-    st.rerun()
+# 1. 값이 없을 때만 초기화 (다른 페이지 갔다 와도 유지되는 핵심 로직)
+if 'pps_threshold' not in st.session_state:
+    st.session_state['pps_threshold'] = 500
 
+def update_pps():
+    st.session_state['pps_threshold'] = st.session_state['pps_input_key']
+
+# 2. value에 직접 숫자를 쓰지 말고 세션 변수를 넣으세요
+st.number_input(
+    "차단 기준 PPS",
+    min_value=1,
+    value=st.session_state['pps_threshold'], # 저장된 세션 값을 보여줌
+    key='pps_input_key',                     # 위젯 전용 내부 키
+    on_change=update_pps                     # 값이 바뀔 때마다 실행
+)
 st.divider()
 
 # 3. 차단 규칙 추가
